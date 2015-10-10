@@ -61,3 +61,10 @@ type UserCommand struct {
 	Left  int32
 	Right int32
 }
+
+type SceneChannels struct {
+	Gs  chan *GameState
+	Ev  chan Event
+	Eng chan int
+	Err chan error
+}

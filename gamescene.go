@@ -1,31 +1,36 @@
 package main
 
 import (
-	//	"fmt"
+	"fmt"
 	"time"
+
+	"github.com/veandco/go-sdl2/sdl_image"
 )
 
 type GameScene struct {
-	ch       chan *GameState
-	evCh     chan Event
-	errCh    chan error
+	sch      SceneChannels
 	lastTime time.Time
 	keyState [1024]bool
 	states   []*GameState
 }
 
-func (s GameScene) Load(ch chan *GameState, evCh chan Event, errCh chan error) {
-	s.ch = ch
-	s.evCh = evCh
-	s.errCh = errCh
-
+func (s *GameScene) Load(sceneCh SceneChannels) {
+	s.sch = sceneCh
 	s.states = make([]*GameState, 2)
 	for i := range s.states {
 		s.states[i] = &GameState{}
 	}
 
+	image, err := img.Load("base/player.png")
+	if err != nil {
+		fmt.Printf("Failed to load PNG: %s\n", err)
+		return
+	}
+	defer image.Free()
+	fmt.Printf("%v x %v", image.W, image.H)
+
 	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{200, 200}, Color: RGBA{255, 0, 0, 255}}
-	ch <- s.states[0]
+	s.sch.Gs <- s.states[0]
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
@@ -38,7 +43,7 @@ func (s GameScene) Load(ch chan *GameState, evCh chan Event, errCh chan error) {
 		running := true
 		for running {
 			select {
-			case ev = <-s.evCh: // we have a new event
+			case ev = <-s.sch.Ev: // we have a new event
 				switch ev.Type {
 				case EV_KEY:
 					s.keyState[ev.EvData1] = ev.Down
@@ -70,7 +75,7 @@ func (s GameScene) Load(ch chan *GameState, evCh chan Event, errCh chan error) {
 	}
 }
 
-func (s GameScene) update(dt int32, userCmd UserCommand) {
+func (s *GameScene) update(dt int32, userCmd UserCommand) {
 	// shift our states down (this is somewhere where we should eventually not rely on GC)
 	s.states[1] = s.states[0]
 	s.states[0] = &GameState{}
@@ -108,9 +113,9 @@ func (s GameScene) update(dt int32, userCmd UserCommand) {
 
 	// do a non blocking read on our gamestate channel to clear it if a previous state exists
 	select {
-	case _ = <-s.ch:
+	case _ = <-s.sch.Gs:
 	default:
 	}
 
-	s.ch <- s.states[0]
+	s.sch.Gs <- s.states[0]
 }
