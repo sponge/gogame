@@ -14,13 +14,15 @@ type GameScene struct {
 	states   []*GameState
 }
 
+// load and run the scene. this is called inside a goroutine from the engine
 func (s *GameScene) Load(sceneCh SceneChannels) {
 	s.sch = sceneCh
-	s.states = make([]*GameState, 2)
+	s.states = make([]*GameState, 2) // make 2 gamestates so we can look back one frame
 	for i := range s.states {
 		s.states[i] = &GameState{}
 	}
 
+	// FIXME: load the player sprites. shouldn't have to use sdl inside here, see main.go
 	image, err := img.Load("base/player.png")
 	if err != nil {
 		fmt.Printf("Failed to load PNG: %s\n", err)
@@ -32,9 +34,11 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 	img := <-s.sch.Eng
 	engImg := img.Data.(Image)
 
+	// load our "level" here
 	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{engImg.W, engImg.H}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
 
-	// push the first gamestate to the engine
+	// block on the first gamestate so we can sync with the renderer
+	// FIXME: emit a loading screen immediately inside the load function
 	s.sch.Gs <- s.states[0]
 
 	s.lastTime = time.Now()
@@ -85,7 +89,7 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 	s.states[1] = s.states[0]
 	s.states[0] = &GameState{}
 
-	// keep the entities from the last state
+	// copy the entities from the last state
 	s.states[0].Entities = s.states[1].Entities
 
 	st := s.states[0]
@@ -109,11 +113,12 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 			ent.Pos.X = BoundInt(ent.Pos.X, 0, 800-ent.Size.W)
 		}
 
-		ent.Color.G = (ent.Color.G + 1) % 255
-
 		if ent.Pos.Y+ent.Size.H > 600 || ent.Pos.Y < 0 {
 			ent.Pos.Y = BoundInt(ent.Pos.Y, 0, 600-ent.Size.H)
 		}
+
+		// whee colors! not used since we have an image now
+		ent.Color.G = (ent.Color.G + 1) % 255
 	}
 
 	// do a non blocking read on our gamestate channel to clear it if a previous state exists
@@ -122,5 +127,6 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 	default:
 	}
 
+	// push our gamestate into the engine
 	s.sch.Gs <- s.states[0]
 }

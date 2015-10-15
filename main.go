@@ -42,24 +42,36 @@ func main() {
 	curTex := 0
 
 	for {
-		// process engine commands
+		// process engine commands from the scene
+		// scenes should block on waiting for the engine to return
+		// if you want an engine function that doesn't block, just send a
+		// response back on the channel immediately to ensure that all
+		// calls from the scene can take the same procedure
 		select {
 		case engCmd := <-sceneCh.Eng:
 			switch engCmd.Id {
+			// upload an sdl.Image to the GPU
+			// FIXME: the gamestate shouldn't use sdl, lets just pass a path to the engine
+			// and have the engine just do the file i/o on the main thread
 			case EC_UPLOADIMAGE:
 				image := engCmd.Data.(*sdl.Surface)
 				texture, err := renderer.CreateTextureFromSurface(image)
 				if err != nil {
 					panic("Error in CreateTextureFromSurface")
 				}
-				_, _, w, h, _ := texture.Query()
+
+				// FIXME: defer? need to delete these somewhere
 				textures[curTex] = texture
+
+				_, _, w, h, _ := texture.Query()
 				sceneCh.Eng <- EngineCommand{Id: engCmd.Id, Success: true, Data: Image{Id: curTex, W: w, H: h}}
 				curTex++
 			}
 		default:
 		}
 
+		// poll for input events and push them to the gamestate queue
+		// this can technically fill the queue and block but it is very unlikely
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
 			case *sdl.QuitEvent:
@@ -89,6 +101,8 @@ func main() {
 		default:
 		}
 
+		// FIXME: we should probably draw a loading here instead, or have the gamescene immediately
+		// send down a loading state
 		if st == nil {
 			continue
 		}
@@ -97,6 +111,7 @@ func main() {
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
 		// for now, all entities are just rectangles, so draw based on ent.pos and ent.size
+		// FIXME: the engine should read a list of rendering commands, not the gamestate
 		for _, ent := range st.Entities {
 			if !ent.Valid {
 				continue
