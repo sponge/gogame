@@ -27,9 +27,14 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		return
 	}
 	defer image.Free()
-	fmt.Printf("%v x %v", image.W, image.H)
 
-	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{200, 200}, Color: RGBA{255, 0, 0, 255}}
+	s.sch.Eng <- EngineCommand{Id: EC_UPLOADIMAGE, Data: image}
+	img := <-s.sch.Eng
+	engImg := img.Data.(Image)
+
+	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{engImg.W, engImg.H}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
+
+	// push the first gamestate to the engine
 	s.sch.Gs <- s.states[0]
 
 	s.lastTime = time.Now()

@@ -31,16 +31,34 @@ func main() {
 	defer renderer.Destroy()
 
 	// we're done loading the game, start the update loop
-	sceneCh := SceneChannels{Gs: make(chan *GameState, 1), Ev: make(chan Event, 256), Eng: make(chan int), Err: make(chan error)}
+	sceneCh := SceneChannels{Gs: make(chan *GameState, 1), Ev: make(chan Event, 256), Eng: make(chan EngineCommand), Err: make(chan error)}
 
 	// load the gamescene and have it immediately start pumping out gamestates in a thread
 	gameScene := GameScene{}
 	go gameScene.Load(sceneCh)
 
-	// wait until the first frame before starting rendering
-	st := <-sceneCh.Gs
+	var st *GameState
+	textures := make([]*sdl.Texture, 1024, 1024)
+	curTex := 0
 
 	for {
+		// process engine commands
+		select {
+		case engCmd := <-sceneCh.Eng:
+			switch engCmd.Id {
+			case EC_UPLOADIMAGE:
+				image := engCmd.Data.(*sdl.Surface)
+				texture, err := renderer.CreateTextureFromSurface(image)
+				if err != nil {
+					panic("Error in CreateTextureFromSurface")
+				}
+				_, _, w, h, _ := texture.Query()
+				textures[curTex] = texture
+				sceneCh.Eng <- EngineCommand{Id: engCmd.Id, Success: true, Data: Image{Id: curTex, W: w, H: h}}
+				curTex++
+			}
+		default:
+		}
 
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
@@ -71,6 +89,10 @@ func main() {
 		default:
 		}
 
+		if st == nil {
+			continue
+		}
+
 		// render whatever gamestate we have at the time
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
@@ -81,7 +103,11 @@ func main() {
 			}
 
 			renderer.SetDrawColor(ent.Color.R, ent.Color.G, ent.Color.B, ent.Color.A)
-			renderer.FillRect(&sdl.Rect{ent.Pos.X, ent.Pos.Y, ent.Size.H, ent.Size.W})
+			if textures[ent.Image] != nil {
+				renderer.Copy(textures[ent.Image], nil, &sdl.Rect{ent.Pos.X, ent.Pos.Y, ent.Size.W, ent.Size.H})
+			} else {
+				renderer.FillRect(&sdl.Rect{ent.Pos.X, ent.Pos.Y, ent.Size.W, ent.Size.H})
+			}
 		}
 		renderer.Present()
 	}

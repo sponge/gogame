@@ -1,13 +1,12 @@
 package main
 
-import ()
-
 type Entity struct {
 	Valid bool
 	Pos   Vector
 	Vel   Vector
 	Size  Size
 	Color RGBA
+	Image int
 }
 
 type Vector struct {
@@ -51,7 +50,7 @@ type Event struct {
 }
 
 type Scene interface {
-	Load(ch chan *GameState, evCh chan Event, errCh chan error)
+	Load(sceneCh SceneChannels)
 	Unload()
 }
 
@@ -65,6 +64,24 @@ type UserCommand struct {
 type SceneChannels struct {
 	Gs  chan *GameState
 	Ev  chan Event
-	Eng chan int
+	Eng chan EngineCommand
 	Err chan error
+}
+
+type ECmd int
+
+const (
+	EC_UPLOADIMAGE ECmd = 1 + iota
+)
+
+type EngineCommand struct {
+	Id      ECmd
+	Success bool
+	Data    interface{}
+}
+
+type Image struct {
+	Id int
+	W  int32
+	H  int32
 }
