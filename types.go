@@ -62,16 +62,16 @@ type UserCommand struct {
 }
 
 type SceneChannels struct {
-	Gs  chan *GameState
-	Ev  chan Event
-	Eng chan EngineCommand
-	Err chan error
+	RCmd chan *RenderCommandList
+	Ev   chan Event
+	Eng  chan EngineCommand
+	Err  chan error
 }
 
 type ECmd int
 
 const (
-	EC_UPLOADIMAGE ECmd = 1 + iota
+	EC_LOADIMAGE ECmd = 1 + iota
 )
 
 type EngineCommand struct {
@@ -84,4 +84,36 @@ type Image struct {
 	Id int
 	W  int32
 	H  int32
+}
+
+type RCmd int
+
+const (
+	RC_RECT RCmd = 1 + iota
+	RC_PIC
+	RC_TEXT
+)
+
+type RectCommand struct {
+	Pos   Vector
+	Size  Size
+	Color RGBA
+}
+
+type PicCommand struct {
+	ImageId int32
+	Pos     Vector
+	Size    Size
+	SrcPos  Vector
+	SrcSize Size
+}
+
+type RenderCommandList struct {
+	NumCommands int32
+	Commands    [1024]RenderCommand
+}
+
+type RenderCommand struct {
+	Id   RCmd
+	Data interface{}
 }

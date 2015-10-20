@@ -5,6 +5,7 @@ import (
 	"runtime"
 
 	"github.com/veandco/go-sdl2/sdl"
+	"github.com/veandco/go-sdl2/sdl_image"
 )
 
 func init() {
@@ -31,15 +32,17 @@ func main() {
 	defer renderer.Destroy()
 
 	// we're done loading the game, start the update loop
-	sceneCh := SceneChannels{Gs: make(chan *GameState, 1), Ev: make(chan Event, 256), Eng: make(chan EngineCommand), Err: make(chan error)}
+	sceneCh := SceneChannels{RCmd: make(chan *RenderCommandList, 1), Ev: make(chan Event, 256), Eng: make(chan EngineCommand), Err: make(chan error)}
 
 	// load the gamescene and have it immediately start pumping out gamestates in a thread
 	gameScene := GameScene{}
 	go gameScene.Load(sceneCh)
 
-	var st *GameState
+	var st *RenderCommandList
 	textures := make([]*sdl.Texture, 1024, 1024)
 	curTex := 0
+
+	//debug.SetGCPercent(-1)
 
 	for {
 		// process engine commands from the scene
@@ -50,11 +53,16 @@ func main() {
 		select {
 		case engCmd := <-sceneCh.Eng:
 			switch engCmd.Id {
-			// upload an sdl.Image to the GPU
-			// FIXME: the gamestate shouldn't use sdl, lets just pass a path to the engine
-			// and have the engine just do the file i/o on the main thread
-			case EC_UPLOADIMAGE:
-				image := engCmd.Data.(*sdl.Surface)
+			// load an image from disk and upload to gpu
+			case EC_LOADIMAGE:
+				fname := engCmd.Data.(string)
+				image, err := img.Load(fname)
+				if err != nil {
+					fmt.Printf("Failed to load PNG: %s\n", err)
+					return
+				}
+				defer image.Free()
+
 				texture, err := renderer.CreateTextureFromSurface(image)
 				if err != nil {
 					panic("Error in CreateTextureFromSurface")
@@ -72,6 +80,7 @@ func main() {
 
 		// poll for input events and push them to the gamestate queue
 		// this can technically fill the queue and block but it is very unlikely
+		// FIXME: SDL_GetKeyboardState?
 		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
 			case *sdl.QuitEvent:
@@ -93,9 +102,9 @@ func main() {
 			}
 		}
 
-		// check for new gamestates
+		// check for new render lists
 		select {
-		case st = <-sceneCh.Gs: // we have a new gamestate
+		case st = <-sceneCh.RCmd: // we have a new render command list
 		case err = <-sceneCh.Err: // we have an error from the gamestate
 			return
 		default:
@@ -110,20 +119,28 @@ func main() {
 		// render whatever gamestate we have at the time
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
-		// for now, all entities are just rectangles, so draw based on ent.pos and ent.size
-		// FIXME: the engine should read a list of rendering commands, not the gamestate
-		for _, ent := range st.Entities {
-			if !ent.Valid {
-				continue
-			}
+		renderer.FillRect(&sdl.Rect{0, 0, 800, 600})
 
-			renderer.SetDrawColor(ent.Color.R, ent.Color.G, ent.Color.B, ent.Color.A)
-			if textures[ent.Image] != nil {
-				renderer.Copy(textures[ent.Image], nil, &sdl.Rect{ent.Pos.X, ent.Pos.Y, ent.Size.W, ent.Size.H})
-			} else {
-				renderer.FillRect(&sdl.Rect{ent.Pos.X, ent.Pos.Y, ent.Size.W, ent.Size.H})
+		for i := 0; i < int(st.NumCommands); i++ {
+			rc := &st.Commands[i]
+
+			switch rc.Id {
+			// load an image from disk and upload to gpu
+			case RC_PIC:
+				pic := rc.Data.(PicCommand)
+				var srcRect *sdl.Rect
+				if pic.SrcSize.W > 0 && pic.SrcSize.H > 0 {
+					srcRect = &sdl.Rect{pic.SrcPos.X, pic.SrcPos.Y, pic.SrcSize.W, pic.SrcSize.H}
+				}
+				renderer.Copy(textures[pic.ImageId], srcRect, &sdl.Rect{pic.Pos.X, pic.Pos.Y, pic.Size.W, pic.Size.H})
+			case RC_RECT:
+				rect := rc.Data.(RectCommand)
+				renderer.SetDrawColor(rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A)
+				renderer.FillRect(&sdl.Rect{rect.Pos.X, rect.Pos.Y, rect.Size.W, rect.Size.H})
+				renderer.SetDrawColor(0, 0, 0, 255)
 			}
 		}
+
 		renderer.Present()
 	}
 }

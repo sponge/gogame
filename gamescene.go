@@ -1,10 +1,8 @@
 package main
 
 import (
-	"fmt"
+	"math"
 	"time"
-
-	"github.com/veandco/go-sdl2/sdl_image"
 )
 
 type GameScene struct {
@@ -22,24 +20,17 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		s.states[i] = &GameState{}
 	}
 
-	// FIXME: load the player sprites. shouldn't have to use sdl inside here, see main.go
-	image, err := img.Load("base/player.png")
-	if err != nil {
-		fmt.Printf("Failed to load PNG: %s\n", err)
-		return
-	}
-	defer image.Free()
-
-	s.sch.Eng <- EngineCommand{Id: EC_UPLOADIMAGE, Data: image}
+	// load our assets
+	s.sch.Eng <- EngineCommand{Id: EC_LOADIMAGE, Data: "base/player.png"}
 	img := <-s.sch.Eng
 	engImg := img.Data.(Image)
 
 	// load our "level" here
-	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{engImg.W, engImg.H}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
+	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
 
 	// block on the first gamestate so we can sync with the renderer
 	// FIXME: emit a loading screen immediately inside the load function
-	s.sch.Gs <- s.states[0]
+	s.sch.RCmd <- s.render(s.states[0])
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
@@ -80,6 +71,14 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		}
 
 		s.update(dt, userCmd)
+
+		// do a non blocking read on our render command channel to clear it if a previous list exists
+		select {
+		case _ = <-s.sch.RCmd:
+		default:
+		}
+
+		s.sch.RCmd <- s.render(s.states[0])
 		s.lastTime = now
 	}
 }
@@ -94,6 +93,7 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 
 	st := s.states[0]
 	st.FrameTime = dt
+	st.Time = s.states[1].Time + dt/1000000
 
 	for i := 0; i < len(st.Entities); i++ {
 		var ent *Entity = &st.Entities[i]
@@ -120,13 +120,47 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 		// whee colors! not used since we have an image now
 		ent.Color.G = (ent.Color.G + 1) % 255
 	}
+}
 
-	// do a non blocking read on our gamestate channel to clear it if a previous state exists
-	select {
-	case _ = <-s.sch.Gs:
-	default:
+func (s *GameScene) render(st *GameState) *RenderCommandList {
+	var commandList RenderCommandList
+	num := 0
+
+	for ; num < 450; num++ {
+		var cmd RectCommand
+		commandList.Commands[num].Id = RC_RECT
+		cmd.Pos = Vector{(int32(2*num)+int32(float64(st.Time))/20)%832 - 32, int32(math.Sin(float64(st.Time)/3000+float64(num))*300) + 300}
+		cmd.Size = Size{32, 32}
+		cmd.Color = RGBA{0, 0, uint8(float64(cmd.Pos.Y)/600*200) + 55, 255}
+		commandList.Commands[num].Data = cmd
 	}
 
-	// push our gamestate into the engine
-	s.sch.Gs <- s.states[0]
+	for _, ent := range st.Entities {
+		if !ent.Valid {
+			continue
+		}
+
+		if ent.Image > -1 {
+			var cmd PicCommand
+			commandList.Commands[num].Id = RC_PIC
+			cmd.Pos = ent.Pos
+			cmd.Size = ent.Size
+			cmd.SrcSize = Size{16, 32}
+			// cmd.SrcPos
+			commandList.Commands[num].Data = cmd
+		} else {
+			var cmd RectCommand
+			commandList.Commands[num].Id = RC_RECT
+			cmd.Pos = ent.Pos
+			cmd.Size = ent.Size
+			cmd.Color = ent.Color
+			commandList.Commands[num].Data = cmd
+		}
+
+		num++
+	}
+
+	commandList.NumCommands = int32(num)
+
+	return &commandList
 }
