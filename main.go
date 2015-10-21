@@ -10,13 +10,17 @@ import (
 
 func init() {
 	runtime.LockOSThread()
+	//debug.SetGCPercent(-1)
 }
 
-var lastRenderCommands RenderCommandList
 var engCmd EngineCommand
 var event sdl.Event
-var st *RenderCommandList
+var rcmds *RenderCommandList
 var rc *RenderCommand
+var srcRect sdl.Rect
+var dstRect sdl.Rect
+var pic PicCommand
+var rect RectCommand
 
 func main() {
 	fmt.Println("Starting up...")
@@ -46,8 +50,6 @@ func main() {
 
 	textures := make([]*sdl.Texture, 1024, 1024)
 	curTex := 0
-
-	//debug.SetGCPercent(-1)
 
 	for {
 		// process engine commands from the scene
@@ -107,45 +109,38 @@ func main() {
 			}
 		}
 
-		// check for new render lists
-
-		// FIXME: may occasionally cause a black frame due to threading issues
-		// we should probably request a render instead of polling
-		// the lock doesn't seem to work or the copy isn't or something i don't know
-		sceneCh.RCmdLock.Lock()
 		select {
-		case st = <-sceneCh.RCmd: // we have a new render command list
-			lastRenderCommands = *st
 		case err = <-sceneCh.Err: // we have an error from the gamestate
 			return
 		default:
 		}
 
 		// render whatever gamestate we have at the time
+		rcmds = gameScene.render()
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
 		renderer.FillRect(&sdl.Rect{0, 0, 1280, 720})
 
-		for i := 0; i < int(lastRenderCommands.NumCommands); i++ {
-			rc = &lastRenderCommands.Commands[i]
+		for i := 0; i < int(rcmds.NumCommands); i++ {
+			rc = &rcmds.Commands[i]
 
 			switch rc.Id {
 			// load an image from disk and upload to gpu
 			case RC_PIC:
-				pic := rc.Data.(PicCommand)
-				var srcRect *sdl.Rect
+				pic = rc.Data.(PicCommand)
 				if pic.SrcSize.W > 0 && pic.SrcSize.H > 0 {
-					srcRect = &sdl.Rect{pic.SrcPos.X, pic.SrcPos.Y, pic.SrcSize.W, pic.SrcSize.H}
+					srcRect = sdl.Rect{pic.SrcPos.X, pic.SrcPos.Y, pic.SrcSize.W, pic.SrcSize.H}
 				}
-				renderer.Copy(textures[pic.ImageId], srcRect, &sdl.Rect{pic.Pos.X, pic.Pos.Y, pic.Size.W, pic.Size.H})
+				dstRect = sdl.Rect{pic.Pos.X, pic.Pos.Y, pic.Size.W, pic.Size.H}
+				renderer.Copy(textures[pic.ImageId], &srcRect, &dstRect)
 			case RC_RECT:
-				rect := rc.Data.(RectCommand)
+				rect = rc.Data.(RectCommand)
 				renderer.SetDrawColor(rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A)
-				renderer.FillRect(&sdl.Rect{rect.Pos.X, rect.Pos.Y, rect.Size.W, rect.Size.H})
+				dstRect = sdl.Rect{rect.Pos.X, rect.Pos.Y, rect.Size.W, rect.Size.H}
+				renderer.FillRect(&dstRect)
 				renderer.SetDrawColor(0, 0, 0, 255)
 			}
 		}
-		sceneCh.RCmdLock.Unlock()
 
 		renderer.Present()
 	}

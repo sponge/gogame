@@ -64,11 +64,11 @@ type UserCommand struct {
 }
 
 type SceneChannels struct {
-	RCmd     chan *RenderCommandList
-	Ev       chan Event
-	Eng      chan EngineCommand
-	Err      chan error
-	RCmdLock sync.Mutex
+	RCmd      chan *RenderCommandList
+	Ev        chan Event
+	Eng       chan EngineCommand
+	Err       chan error
+	stateLock sync.Mutex
 }
 
 type ECmd int

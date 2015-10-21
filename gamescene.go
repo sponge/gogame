@@ -8,12 +8,13 @@ import (
 )
 
 type GameScene struct {
-	sch       SceneChannels
-	lastTime  time.Time
-	keyState  [1024]bool
-	prevState GameState
-	state     GameState
-	rcmds     RenderCommandList
+	sch            SceneChannels
+	lastTime       time.Time
+	keyState       [1024]bool
+	prevState      GameState
+	state          GameState
+	renderingState GameState
+	rcmds          RenderCommandList
 }
 
 // load and run the scene. this is called inside a goroutine from the engine
@@ -28,11 +29,6 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 	// load our "level" here
 	gamemap.Load("base/level1.json")
 	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
-
-	// block on the first gamestate so we can sync with the renderer
-	// FIXME: emit a loading screen immediately inside the load function
-	s.render(&s.state)
-	s.sch.RCmd <- &s.rcmds
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
@@ -80,13 +76,12 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		default:
 		}
 
-		s.render(&s.state)
-		s.sch.RCmd <- &s.rcmds
 		s.lastTime = now
 	}
 }
 
 func (s *GameScene) update(dt int32, userCmd UserCommand) {
+	s.sch.stateLock.Lock()
 	s.prevState = s.state
 
 	st := &s.state
@@ -118,13 +113,17 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 		// whee colors! not used since we have an image now
 		ent.Color.G = (ent.Color.G + 1) % 255
 	}
+	s.sch.stateLock.Unlock()
 }
 
-func (s *GameScene) render(st *GameState) {
-	s.sch.RCmdLock.Lock()
+func (s *GameScene) render() *RenderCommandList {
+	s.sch.stateLock.Lock()
+	s.renderingState = s.state
+	s.sch.stateLock.Unlock()
 
-	// FIXME: this causes crashes, race conditions in the thread
-	//s.rcmds = RenderCommandList{}
+	s.rcmds = RenderCommandList{}
+	st := &s.renderingState
+
 	num := 0
 
 	for ; num < 1280/4; num++ {
@@ -162,8 +161,5 @@ func (s *GameScene) render(st *GameState) {
 	}
 
 	s.rcmds.NumCommands = int32(num)
-
-	s.sch.RCmdLock.Unlock()
-
-	return
+	return &s.rcmds
 }
