@@ -1,5 +1,7 @@
 package main
 
+import "sync"
+
 type Entity struct {
 	Valid bool
 	Pos   Vector
@@ -62,10 +64,11 @@ type UserCommand struct {
 }
 
 type SceneChannels struct {
-	RCmd chan *RenderCommandList
-	Ev   chan Event
-	Eng  chan EngineCommand
-	Err  chan error
+	RCmd     chan *RenderCommandList
+	Ev       chan Event
+	Eng      chan EngineCommand
+	Err      chan error
+	RCmdLock sync.Mutex
 }
 
 type ECmd int

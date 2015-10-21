@@ -12,13 +12,19 @@ func init() {
 	runtime.LockOSThread()
 }
 
+var lastRenderCommands RenderCommandList
+var engCmd EngineCommand
+var event sdl.Event
+var st *RenderCommandList
+var rc *RenderCommand
+
 func main() {
 	fmt.Println("Starting up...")
 
 	sdl.Init(sdl.INIT_EVERYTHING)
 
 	// create window context
-	window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 800, 600, sdl.WINDOW_SHOWN)
+	window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 1280, 720, sdl.WINDOW_SHOWN)
 	if err != nil {
 		panic(err)
 	}
@@ -38,7 +44,6 @@ func main() {
 	gameScene := GameScene{}
 	go gameScene.Load(sceneCh)
 
-	var st *RenderCommandList
 	textures := make([]*sdl.Texture, 1024, 1024)
 	curTex := 0
 
@@ -51,7 +56,7 @@ func main() {
 		// response back on the channel immediately to ensure that all
 		// calls from the scene can take the same procedure
 		select {
-		case engCmd := <-sceneCh.Eng:
+		case engCmd = <-sceneCh.Eng:
 			switch engCmd.Id {
 			// load an image from disk and upload to gpu
 			case EC_LOADIMAGE:
@@ -81,7 +86,7 @@ func main() {
 		// poll for input events and push them to the gamestate queue
 		// this can technically fill the queue and block but it is very unlikely
 		// FIXME: SDL_GetKeyboardState?
-		for event := sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
+		for event = sdl.PollEvent(); event != nil; event = sdl.PollEvent() {
 			switch t := event.(type) {
 			case *sdl.QuitEvent:
 				return
@@ -103,26 +108,26 @@ func main() {
 		}
 
 		// check for new render lists
+
+		// FIXME: may occasionally cause a black frame due to threading issues
+		// we should probably request a render instead of polling
+		// the lock doesn't seem to work or the copy isn't or something i don't know
+		sceneCh.RCmdLock.Lock()
 		select {
 		case st = <-sceneCh.RCmd: // we have a new render command list
+			lastRenderCommands = *st
 		case err = <-sceneCh.Err: // we have an error from the gamestate
 			return
 		default:
 		}
 
-		// FIXME: we should probably draw a loading here instead, or have the gamescene immediately
-		// send down a loading state
-		if st == nil {
-			continue
-		}
-
 		// render whatever gamestate we have at the time
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
-		renderer.FillRect(&sdl.Rect{0, 0, 800, 600})
+		renderer.FillRect(&sdl.Rect{0, 0, 1280, 720})
 
-		for i := 0; i < int(st.NumCommands); i++ {
-			rc := &st.Commands[i]
+		for i := 0; i < int(lastRenderCommands.NumCommands); i++ {
+			rc = &lastRenderCommands.Commands[i]
 
 			switch rc.Id {
 			// load an image from disk and upload to gpu
@@ -140,6 +145,7 @@ func main() {
 				renderer.SetDrawColor(0, 0, 0, 255)
 			}
 		}
+		sceneCh.RCmdLock.Unlock()
 
 		renderer.Present()
 	}

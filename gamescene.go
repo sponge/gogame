@@ -3,22 +3,22 @@ package main
 import (
 	"math"
 	"time"
+
+	"./gamemap"
 )
 
 type GameScene struct {
-	sch      SceneChannels
-	lastTime time.Time
-	keyState [1024]bool
-	states   []*GameState
+	sch       SceneChannels
+	lastTime  time.Time
+	keyState  [1024]bool
+	prevState GameState
+	state     GameState
+	rcmds     RenderCommandList
 }
 
 // load and run the scene. this is called inside a goroutine from the engine
 func (s *GameScene) Load(sceneCh SceneChannels) {
 	s.sch = sceneCh
-	s.states = make([]*GameState, 2) // make 2 gamestates so we can look back one frame
-	for i := range s.states {
-		s.states[i] = &GameState{}
-	}
 
 	// load our assets
 	s.sch.Eng <- EngineCommand{Id: EC_LOADIMAGE, Data: "base/player.png"}
@@ -26,11 +26,13 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 	engImg := img.Data.(Image)
 
 	// load our "level" here
-	s.states[0].Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
+	gamemap.Load("base/level1.json")
+	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
 
 	// block on the first gamestate so we can sync with the renderer
 	// FIXME: emit a loading screen immediately inside the load function
-	s.sch.RCmd <- s.render(s.states[0])
+	s.render(&s.state)
+	s.sch.RCmd <- &s.rcmds
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
@@ -78,22 +80,18 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		default:
 		}
 
-		s.sch.RCmd <- s.render(s.states[0])
+		s.render(&s.state)
+		s.sch.RCmd <- &s.rcmds
 		s.lastTime = now
 	}
 }
 
 func (s *GameScene) update(dt int32, userCmd UserCommand) {
-	// shift our states down (this is somewhere where we should eventually not rely on GC)
-	s.states[1] = s.states[0]
-	s.states[0] = &GameState{}
+	s.prevState = s.state
 
-	// copy the entities from the last state
-	s.states[0].Entities = s.states[1].Entities
-
-	st := s.states[0]
+	st := &s.state
 	st.FrameTime = dt
-	st.Time = s.states[1].Time + dt/1000000
+	st.Time = s.prevState.Time + dt/1000000
 
 	for i := 0; i < len(st.Entities); i++ {
 		var ent *Entity = &st.Entities[i]
@@ -101,20 +99,20 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 			continue
 		}
 
-		ent.Vel.X = 1 * (userCmd.Right - userCmd.Left) / 255
-		ent.Vel.Y = 1 * (userCmd.Down - userCmd.Up) / 255
+		ent.Vel.X = 4 * (userCmd.Right - userCmd.Left) / 255
+		ent.Vel.Y = 4 * (userCmd.Down - userCmd.Up) / 255
 
 		// move all entities based on velocity
 		ent.Pos.X += st.FrameTime / 5000000 * ent.Vel.X
 		ent.Pos.Y += st.FrameTime / 5000000 * ent.Vel.Y
 
 		// bounds checking
-		if ent.Pos.X+ent.Size.W > 800 || ent.Pos.X < 0 {
-			ent.Pos.X = BoundInt(ent.Pos.X, 0, 800-ent.Size.W)
+		if ent.Pos.X+ent.Size.W > 1280 || ent.Pos.X < 0 {
+			ent.Pos.X = BoundInt(ent.Pos.X, 0, 1280-ent.Size.W)
 		}
 
-		if ent.Pos.Y+ent.Size.H > 600 || ent.Pos.Y < 0 {
-			ent.Pos.Y = BoundInt(ent.Pos.Y, 0, 600-ent.Size.H)
+		if ent.Pos.Y+ent.Size.H > 720 || ent.Pos.Y < 0 {
+			ent.Pos.Y = BoundInt(ent.Pos.Y, 0, 720-ent.Size.H)
 		}
 
 		// whee colors! not used since we have an image now
@@ -122,17 +120,20 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 	}
 }
 
-func (s *GameScene) render(st *GameState) *RenderCommandList {
-	var commandList RenderCommandList
+func (s *GameScene) render(st *GameState) {
+	s.sch.RCmdLock.Lock()
+
+	// FIXME: this causes crashes, race conditions in the thread
+	//s.rcmds = RenderCommandList{}
 	num := 0
 
-	for ; num < 450; num++ {
+	for ; num < 1280/4; num++ {
 		var cmd RectCommand
-		commandList.Commands[num].Id = RC_RECT
-		cmd.Pos = Vector{(int32(2*num)+int32(float64(st.Time))/20)%832 - 32, int32(math.Sin(float64(st.Time)/3000+float64(num))*300) + 300}
+		s.rcmds.Commands[num].Id = RC_RECT
+		cmd.Pos = Vector{(int32(4*num)+int32(float64(st.Time))/20)%(1280+32) - 32, int32(math.Sin(float64(st.Time)/3000+float64(num))*(720/2)) + (720 / 2)}
 		cmd.Size = Size{32, 32}
-		cmd.Color = RGBA{0, 0, uint8(float64(cmd.Pos.Y)/600*200) + 55, 255}
-		commandList.Commands[num].Data = cmd
+		cmd.Color = RGBA{0, 0, uint8(float64(cmd.Pos.Y)/720*200) + 55, 255}
+		s.rcmds.Commands[num].Data = cmd
 	}
 
 	for _, ent := range st.Entities {
@@ -142,25 +143,27 @@ func (s *GameScene) render(st *GameState) *RenderCommandList {
 
 		if ent.Image > -1 {
 			var cmd PicCommand
-			commandList.Commands[num].Id = RC_PIC
+			s.rcmds.Commands[num].Id = RC_PIC
 			cmd.Pos = ent.Pos
 			cmd.Size = ent.Size
 			cmd.SrcSize = Size{16, 32}
 			// cmd.SrcPos
-			commandList.Commands[num].Data = cmd
+			s.rcmds.Commands[num].Data = cmd
 		} else {
 			var cmd RectCommand
-			commandList.Commands[num].Id = RC_RECT
+			s.rcmds.Commands[num].Id = RC_RECT
 			cmd.Pos = ent.Pos
 			cmd.Size = ent.Size
 			cmd.Color = ent.Color
-			commandList.Commands[num].Data = cmd
+			s.rcmds.Commands[num].Data = cmd
 		}
 
 		num++
 	}
 
-	commandList.NumCommands = int32(num)
+	s.rcmds.NumCommands = int32(num)
 
-	return &commandList
+	s.sch.RCmdLock.Unlock()
+
+	return
 }
