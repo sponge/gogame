@@ -1,13 +1,14 @@
 package main
 
 import (
-	"math"
+	"os"
 	"time"
 
-	"./gamemap"
+	"./tmx"
 )
 
 type GameScene struct {
+	ready          bool
 	sch            SceneChannels
 	lastTime       time.Time
 	keyState       [1024]bool
@@ -15,23 +16,45 @@ type GameScene struct {
 	state          GameState
 	renderingState GameState
 	rcmds          RenderCommandList
+	images         map[string]Image
+	gmap           tmx.Map
 }
 
 // load and run the scene. this is called inside a goroutine from the engine
 func (s *GameScene) Load(sceneCh SceneChannels) {
 	s.sch = sceneCh
+	s.images = make(map[string]Image)
 
 	// load our assets
-	s.sch.Eng <- EngineCommand{Id: EC_LOADIMAGE, Data: "base/player.png"}
+	playerImage := "player.png"
+	s.sch.Eng <- EngineCommand{Id: EC_LOADIMAGE, Data: "base/" + playerImage}
 	img := <-s.sch.Eng
-	engImg := img.Data.(Image)
+	s.images[playerImage] = img.Data.(Image)
 
-	// load our "level" here
-	gamemap.Load("base/level1.json")
-	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: engImg.Id}
+	// load our level here
+	freader, err := os.Open("base/testlevel.tmx")
+	if err != nil {
+		return
+	}
+
+	gmap, err := tmx.Read(freader)
+	if err != nil {
+		return
+	}
+	s.gmap = *gmap
+
+	for i := range s.gmap.Tilesets {
+		ts := &s.gmap.Tilesets[i]
+		s.sch.Eng <- EngineCommand{Id: EC_LOADIMAGE, Data: "base/" + ts.Image.Source}
+		img := <-s.sch.Eng
+		s.images[ts.Image.Source] = img.Data.(Image)
+	}
+
+	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: s.images["player.png"].Id}
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
+	s.ready = true
 	for now := range loop {
 		dt := int32(time.Since(s.lastTime).Nanoseconds())
 
@@ -126,13 +149,38 @@ func (s *GameScene) render() *RenderCommandList {
 
 	num := 0
 
-	for ; num < 1280/4; num++ {
-		var cmd RectCommand
-		s.rcmds.Commands[num].Id = RC_RECT
-		cmd.Pos = Vector{(int32(4*num)+int32(float64(st.Time))/20)%(1280+32) - 32, int32(math.Sin(float64(st.Time)/3000+float64(num))*(720/2)) + (720 / 2)}
-		cmd.Size = Size{32, 32}
-		cmd.Color = RGBA{0, 0, uint8(float64(cmd.Pos.Y)/720*200) + 55, 255}
-		s.rcmds.Commands[num].Data = cmd
+	// for ; num < 1280/4; num++ {
+	// 	var cmd RectCommand
+	// 	s.rcmds.Commands[num].Id = RC_RECT
+	// 	cmd.Pos = Vector{(int32(4*num)+int32(float64(st.Time))/20)%(1280+32) - 32, int32(math.Sin(float64(st.Time)/3000+float64(num))*(720/2)) + (720 / 2)}
+	// 	cmd.Size = Size{32, 32}
+	// 	cmd.Color = RGBA{0, 0, uint8(float64(cmd.Pos.Y)/720*200) + 55, 255}
+	// 	s.rcmds.Commands[num].Data = cmd
+	// }
+
+	var y, x, i, tid int
+	for i = range s.gmap.Layers {
+		layer := &s.gmap.Layers[i]
+		tsw := layer.Tileset.Image.Width / layer.Tileset.TileWidth
+		for y = 0; y < s.gmap.Height; y++ {
+			for x = 0; x < s.gmap.Width; x++ {
+				tid = int(layer.DecodedTiles[y*s.gmap.Width+x].ID)
+				if tid == 0 {
+					continue
+				}
+
+				var cmd PicCommand
+				s.rcmds.Commands[num].Id = RC_PIC
+				cmd.Pos = Vector{X: int32(x * 64), Y: int32(y * 64)}
+				cmd.Size = Size{W: 64, H: 64}
+				cmd.SrcSize = Size{16, 16}
+				cmd.SrcPos = Vector{int32(tid%tsw) * int32(layer.Tileset.TileWidth), int32(tid/tsw) * int32(layer.Tileset.TileHeight)}
+				cmd.ImageId = int32(s.images[layer.Tileset.Image.Source].Id)
+				s.rcmds.Commands[num].Data = cmd
+				num++
+			}
+		}
+
 	}
 
 	for _, ent := range st.Entities {
