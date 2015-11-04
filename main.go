@@ -27,8 +27,11 @@ func main() {
 
 	sdl.Init(sdl.INIT_EVERYTHING)
 
+	winWidth := 1280
+	winHeight := 720
+
 	// create window context
-	window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 1280, 720, sdl.WINDOW_SHOWN)
+	window, err := sdl.CreateWindow("test", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, winWidth, winHeight, sdl.WINDOW_SHOWN)
 	if err != nil {
 		panic(err)
 	}
@@ -46,6 +49,7 @@ func main() {
 
 	// load the gamescene and have it immediately start pumping out gamestates in a thread
 	gameScene := GameScene{}
+	//gameScene.Camera.SetSize(Size{int32(winWidth), int32(winHeight)})
 	go gameScene.Load(sceneCh)
 
 	textures := make([]*sdl.Texture, 1024, 1024)
@@ -111,6 +115,7 @@ func main() {
 
 		select {
 		case err = <-sceneCh.Err: // we have an error from the gamestate
+			panic(err)
 			return
 		default:
 		}

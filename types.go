@@ -32,6 +32,8 @@ type GameState struct {
 	Time      int32
 	FrameTime int32
 	Entities  [1024]Entity
+	Camera    Camera
+	LocalEnt  *Entity
 }
 
 type EventType int
@@ -119,4 +121,24 @@ type RenderCommandList struct {
 type RenderCommand struct {
 	Id   RCmd
 	Data interface{}
+}
+
+type Camera struct {
+	Left   int
+	Right  int
+	Top    int
+	Bottom int
+	Size   Size
+}
+
+func (s *Camera) Set(x int, y int) {
+	s.Left = x
+	s.Top = y
+	s.Right = x + int(s.Size.W)
+	s.Bottom = y + int(s.Size.H)
+}
+
+func (s *Camera) SetSize(sz Size) {
+	s.Size = sz
+	s.Set(s.Left, s.Top)
 }

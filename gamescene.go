@@ -51,6 +51,9 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 	}
 
 	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: s.images["player.png"].Id}
+	s.state.LocalEnt = &s.state.Entities[0]
+
+	s.state.Camera.SetSize(Size{1280, 720})
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
@@ -123,19 +126,21 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 		// move all entities based on velocity
 		ent.Pos.X += st.FrameTime / 5000000 * ent.Vel.X
 		ent.Pos.Y += st.FrameTime / 5000000 * ent.Vel.Y
-
-		// bounds checking
-		if ent.Pos.X+ent.Size.W > 1280 || ent.Pos.X < 0 {
-			ent.Pos.X = BoundInt(ent.Pos.X, 0, 1280-ent.Size.W)
-		}
-
-		if ent.Pos.Y+ent.Size.H > 720 || ent.Pos.Y < 0 {
-			ent.Pos.Y = BoundInt(ent.Pos.Y, 0, 720-ent.Size.H)
-		}
-
-		// whee colors! not used since we have an image now
-		ent.Color.G = (ent.Color.G + 1) % 255
 	}
+
+	// move the camera so that the player is in the bounding box
+	if st.LocalEnt.Vel.X > 0 && int(st.LocalEnt.Pos.X) > st.Camera.Right-200 {
+		st.Camera.Set(int(st.LocalEnt.Pos.X-st.Camera.Size.W+200), st.Camera.Top)
+	} else if st.LocalEnt.Vel.X < 0 && int(st.LocalEnt.Pos.X) < st.Camera.Left+200 {
+		st.Camera.Set(int(st.LocalEnt.Pos.X-200), st.Camera.Top)
+	}
+
+	if st.LocalEnt.Vel.Y > 0 && int(st.LocalEnt.Pos.Y) > st.Camera.Bottom-200 {
+		st.Camera.Set(st.Camera.Left, int(st.LocalEnt.Pos.Y-st.Camera.Size.H+200))
+	} else if st.LocalEnt.Vel.Y < 0 && int(st.LocalEnt.Pos.Y) < st.Camera.Top+200 {
+		st.Camera.Set(st.Camera.Left, int(st.LocalEnt.Pos.Y-200))
+	}
+
 	s.sch.stateLock.Unlock()
 }
 
@@ -171,7 +176,7 @@ func (s *GameScene) render() *RenderCommandList {
 
 				var cmd PicCommand
 				s.rcmds.Commands[num].Id = RC_PIC
-				cmd.Pos = Vector{X: int32(x * 64), Y: int32(y * 64)}
+				cmd.Pos = Vector{X: int32(x*64 - st.Camera.Left), Y: int32(y*64 - st.Camera.Top)}
 				cmd.Size = Size{W: 64, H: 64}
 				cmd.SrcSize = Size{16, 16}
 				cmd.SrcPos = Vector{int32(tid%tsw) * int32(layer.Tileset.TileWidth), int32(tid/tsw) * int32(layer.Tileset.TileHeight)}
@@ -191,7 +196,8 @@ func (s *GameScene) render() *RenderCommandList {
 		if ent.Image > -1 {
 			var cmd PicCommand
 			s.rcmds.Commands[num].Id = RC_PIC
-			cmd.Pos = ent.Pos
+			cmd.Pos.X = ent.Pos.X - int32(st.Camera.Left)
+			cmd.Pos.Y = ent.Pos.Y - int32(st.Camera.Top)
 			cmd.Size = ent.Size
 			cmd.SrcSize = Size{16, 32}
 			// cmd.SrcPos
@@ -199,7 +205,8 @@ func (s *GameScene) render() *RenderCommandList {
 		} else {
 			var cmd RectCommand
 			s.rcmds.Commands[num].Id = RC_RECT
-			cmd.Pos = ent.Pos
+			cmd.Pos.X = ent.Pos.X - int32(st.Camera.Left)
+			cmd.Pos.Y = ent.Pos.Y - int32(st.Camera.Top)
 			cmd.Size = ent.Size
 			cmd.Color = ent.Color
 			s.rcmds.Commands[num].Data = cmd
