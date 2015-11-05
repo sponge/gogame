@@ -2,6 +2,30 @@ package main
 
 import "sync"
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func clamp(min int, i int, max int) int {
+	if i < min {
+		return min
+	} else if i > max {
+		return max
+	} else {
+		return i
+	}
+}
+
 type Entity struct {
 	Valid bool
 	Pos   Vector
@@ -128,17 +152,23 @@ type Camera struct {
 	Right  int
 	Top    int
 	Bottom int
+	Bounds Size
 	Size   Size
 }
 
 func (s *Camera) Set(x int, y int) {
-	s.Left = x
-	s.Top = y
-	s.Right = x + int(s.Size.W)
-	s.Bottom = y + int(s.Size.H)
+	s.Left = clamp(0, x, int(s.Bounds.W-s.Size.W))
+	s.Top = clamp(0, y, int(s.Bounds.H-s.Size.H))
+	s.Right = s.Left + int(s.Size.W)
+	s.Bottom = s.Top + int(s.Size.H)
 }
 
 func (s *Camera) SetSize(sz Size) {
 	s.Size = sz
+	s.Set(s.Left, s.Top)
+}
+
+func (s *Camera) SetBounds(b Size) {
+	s.Bounds = b
 	s.Set(s.Left, s.Top)
 }

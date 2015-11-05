@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -50,10 +51,18 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		s.images[ts.Image.Source] = img.Data.(Image)
 	}
 
+	for i := range s.gmap.ObjectGroups {
+		for j := range s.gmap.ObjectGroups[i].Objects {
+			obj := s.gmap.ObjectGroups[i].Objects[j]
+			fmt.Println(obj.Type)
+		}
+	}
+
 	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: s.images["player.png"].Id}
 	s.state.LocalEnt = &s.state.Entities[0]
 
 	s.state.Camera.SetSize(Size{1280, 720})
+	s.state.Camera.SetBounds(Size{int32(s.gmap.Width * 64), int32(s.gmap.Height * 64)})
 
 	s.lastTime = time.Now()
 	loop := time.Tick(5 * time.Millisecond)
@@ -163,12 +172,24 @@ func (s *GameScene) render() *RenderCommandList {
 	// 	s.rcmds.Commands[num].Data = cmd
 	// }
 
+	var cmd RectCommand
+	s.rcmds.Commands[num].Id = RC_RECT
+	cmd.Pos.X = 0
+	cmd.Pos.Y = 0
+	cmd.Size = st.Camera.Size
+	cmd.Color = RGBA{168, 168, 168, 255}
+	s.rcmds.Commands[num].Data = cmd
+	num++
+
 	var y, x, i, tid int
+	maxX := min(st.Camera.Right/64+1, s.gmap.Width)
+	maxY := min(st.Camera.Bottom/64+1, s.gmap.Height)
+
 	for i = range s.gmap.Layers {
 		layer := &s.gmap.Layers[i]
 		tsw := layer.Tileset.Image.Width / layer.Tileset.TileWidth
-		for y = 0; y < s.gmap.Height; y++ {
-			for x = 0; x < s.gmap.Width; x++ {
+		for y = max(0, st.Camera.Top/64); y < maxY; y++ {
+			for x = max(0, st.Camera.Left/64); x < maxX; x++ {
 				tid = int(layer.DecodedTiles[y*s.gmap.Width+x].ID)
 				if tid == 0 {
 					continue
@@ -178,7 +199,7 @@ func (s *GameScene) render() *RenderCommandList {
 				s.rcmds.Commands[num].Id = RC_PIC
 				cmd.Pos = Vector{X: int32(x*64 - st.Camera.Left), Y: int32(y*64 - st.Camera.Top)}
 				cmd.Size = Size{W: 64, H: 64}
-				cmd.SrcSize = Size{16, 16}
+				cmd.SrcSize = Size{int32(layer.Tileset.TileWidth), int32(layer.Tileset.TileHeight)}
 				cmd.SrcPos = Vector{int32(tid%tsw) * int32(layer.Tileset.TileWidth), int32(tid/tsw) * int32(layer.Tileset.TileHeight)}
 				cmd.ImageId = int32(s.images[layer.Tileset.Image.Source].Id)
 				s.rcmds.Commands[num].Data = cmd

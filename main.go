@@ -128,7 +128,6 @@ func main() {
 		rcmds = gameScene.render()
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()
-		renderer.FillRect(&sdl.Rect{0, 0, 1280, 720})
 
 		for i := 0; i < int(rcmds.NumCommands); i++ {
 			rc = &rcmds.Commands[i]
