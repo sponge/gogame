@@ -124,7 +124,6 @@ func main() {
 			continue
 		}
 
-		// render whatever gamestate we have at the time
 		rcmds = gameScene.render()
 		renderer.SetDrawColor(0, 0, 0, 255)
 		renderer.Clear()

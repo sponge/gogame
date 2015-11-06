@@ -65,7 +65,7 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 	s.state.Camera.SetBounds(Size{int32(s.gmap.Width * 64), int32(s.gmap.Height * 64)})
 
 	s.lastTime = time.Now()
-	loop := time.Tick(5 * time.Millisecond)
+	loop := time.Tick(8 * time.Millisecond)
 	s.ready = true
 	for now := range loop {
 		dt := int32(time.Since(s.lastTime).Nanoseconds())

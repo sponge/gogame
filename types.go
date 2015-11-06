@@ -139,7 +139,7 @@ type PicCommand struct {
 
 type RenderCommandList struct {
 	NumCommands int32
-	Commands    [4096]RenderCommand
+	Commands    [2048]RenderCommand
 }
 
 type RenderCommand struct {
