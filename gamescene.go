@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"time"
 
@@ -51,16 +50,29 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		s.images[ts.Image.Source] = img.Data.(Image)
 	}
 
+	currEnt := 0
+	localEnt := 0
 	for i := range s.gmap.ObjectGroups {
 		for j := range s.gmap.ObjectGroups[i].Objects {
 			obj := s.gmap.ObjectGroups[i].Objects[j]
-			fmt.Println(obj.Type)
+			ent := Entity{}
+			switch obj.Type {
+			case "player_start":
+				ent.Valid = true
+				ent.Pos = Vector{int32(obj.X * 4), int32((obj.Y - 32) * 4)}
+				ent.Size = Size{64, 128}
+				ent.Image = s.images["player.png"].Id
+				localEnt = currEnt
+			}
+
+			if ent.Valid {
+				s.state.Entities[currEnt] = ent
+			}
+			currEnt++
 		}
 	}
 
-	s.state.Entities[0] = Entity{Valid: true, Pos: Vector{100, 100}, Size: Size{64, 128}, Color: RGBA{255, 0, 0, 255}, Image: s.images["player.png"].Id}
-	s.state.LocalEnt = &s.state.Entities[0]
-
+	s.state.LocalEnt = &s.state.Entities[localEnt]
 	s.state.Camera.SetSize(Size{1280, 720})
 	s.state.Camera.SetBounds(Size{int32(s.gmap.Width * 64), int32(s.gmap.Height * 64)})
 
@@ -87,21 +99,10 @@ func (s *GameScene) Load(sceneCh SceneChannels) {
 		}
 
 		userCmd := UserCommand{}
-		if s.keyState[82] {
-			userCmd.Up = 255
-		}
-
-		if s.keyState[79] {
-			userCmd.Right = 255
-		}
-
-		if s.keyState[81] {
-			userCmd.Down = 255
-		}
-
-		if s.keyState[80] {
-			userCmd.Left = 255
-		}
+		userCmd.Up = btoi(s.keyState[82]) * 255
+		userCmd.Right = btoi(s.keyState[79]) * 255
+		userCmd.Down = btoi(s.keyState[81]) * 255
+		userCmd.Left = btoi(s.keyState[80]) * 255
 
 		s.update(dt, userCmd)
 
@@ -129,8 +130,8 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 			continue
 		}
 
-		ent.Vel.X = 4 * (userCmd.Right - userCmd.Left) / 255
-		ent.Vel.Y = 4 * (userCmd.Down - userCmd.Up) / 255
+		ent.Vel.X = 4 * int32(userCmd.Right-userCmd.Left) / 255
+		ent.Vel.Y = 4 * int32(userCmd.Down-userCmd.Up) / 255
 
 		// move all entities based on velocity
 		ent.Pos.X += st.FrameTime / 5000000 * ent.Vel.X
@@ -138,16 +139,16 @@ func (s *GameScene) update(dt int32, userCmd UserCommand) {
 	}
 
 	// move the camera so that the player is in the bounding box
-	if st.LocalEnt.Vel.X > 0 && int(st.LocalEnt.Pos.X) > st.Camera.Right-200 {
-		st.Camera.Set(int(st.LocalEnt.Pos.X-st.Camera.Size.W+200), st.Camera.Top)
-	} else if st.LocalEnt.Vel.X < 0 && int(st.LocalEnt.Pos.X) < st.Camera.Left+200 {
-		st.Camera.Set(int(st.LocalEnt.Pos.X-200), st.Camera.Top)
+	if int(st.LocalEnt.Pos.X) > st.Camera.Right-200 {
+		st.Camera.Set(Vector{st.LocalEnt.Pos.X - st.Camera.Size.W + 200, int32(st.Camera.Top)})
+	} else if int(st.LocalEnt.Pos.X) < st.Camera.Left+200 {
+		st.Camera.Set(Vector{st.LocalEnt.Pos.X - 200, int32(st.Camera.Top)})
 	}
 
-	if st.LocalEnt.Vel.Y > 0 && int(st.LocalEnt.Pos.Y) > st.Camera.Bottom-200 {
-		st.Camera.Set(st.Camera.Left, int(st.LocalEnt.Pos.Y-st.Camera.Size.H+200))
-	} else if st.LocalEnt.Vel.Y < 0 && int(st.LocalEnt.Pos.Y) < st.Camera.Top+200 {
-		st.Camera.Set(st.Camera.Left, int(st.LocalEnt.Pos.Y-200))
+	if int(st.LocalEnt.Pos.Y) > st.Camera.Bottom-200 {
+		st.Camera.Set(Vector{int32(st.Camera.Left), st.LocalEnt.Pos.Y - st.Camera.Size.H + 200})
+	} else if int(st.LocalEnt.Pos.Y) < st.Camera.Top+200 {
+		st.Camera.Set(Vector{int32(st.Camera.Left), st.LocalEnt.Pos.Y - 200})
 	}
 
 	s.sch.stateLock.Unlock()
@@ -163,22 +164,7 @@ func (s *GameScene) render() *RenderCommandList {
 
 	num := 0
 
-	// for ; num < 1280/4; num++ {
-	// 	var cmd RectCommand
-	// 	s.rcmds.Commands[num].Id = RC_RECT
-	// 	cmd.Pos = Vector{(int32(4*num)+int32(float64(st.Time))/20)%(1280+32) - 32, int32(math.Sin(float64(st.Time)/3000+float64(num))*(720/2)) + (720 / 2)}
-	// 	cmd.Size = Size{32, 32}
-	// 	cmd.Color = RGBA{0, 0, uint8(float64(cmd.Pos.Y)/720*200) + 55, 255}
-	// 	s.rcmds.Commands[num].Data = cmd
-	// }
-
-	var cmd RectCommand
-	s.rcmds.Commands[num].Id = RC_RECT
-	cmd.Pos.X = 0
-	cmd.Pos.Y = 0
-	cmd.Size = st.Camera.Size
-	cmd.Color = RGBA{168, 168, 168, 255}
-	s.rcmds.Commands[num].Data = cmd
+	s.rcmds.Commands[num] = RenderCommand{Id: RC_RECT, Pos: Vector{0, 0}, Size: st.Camera.Size, BackColor: RGBA{168, 168, 168, 255}}
 	num++
 
 	var y, x, i, tid int
@@ -195,14 +181,13 @@ func (s *GameScene) render() *RenderCommandList {
 					continue
 				}
 
-				var cmd PicCommand
-				s.rcmds.Commands[num].Id = RC_PIC
+				cmd := &s.rcmds.Commands[num]
+				cmd.Id = RC_PIC
 				cmd.Pos = Vector{X: int32(x*64 - st.Camera.Left), Y: int32(y*64 - st.Camera.Top)}
 				cmd.Size = Size{W: 64, H: 64}
-				cmd.SrcSize = Size{int32(layer.Tileset.TileWidth), int32(layer.Tileset.TileHeight)}
-				cmd.SrcPos = Vector{int32(tid%tsw) * int32(layer.Tileset.TileWidth), int32(tid/tsw) * int32(layer.Tileset.TileHeight)}
 				cmd.ImageId = int32(s.images[layer.Tileset.Image.Source].Id)
-				s.rcmds.Commands[num].Data = cmd
+				cmd.ImgSize = Size{int32(layer.Tileset.TileWidth), int32(layer.Tileset.TileHeight)}
+				cmd.ImgPos = Vector{int32(tid%tsw) * int32(layer.Tileset.TileWidth), int32(tid/tsw) * int32(layer.Tileset.TileHeight)}
 				num++
 			}
 		}
@@ -214,24 +199,14 @@ func (s *GameScene) render() *RenderCommandList {
 			continue
 		}
 
-		if ent.Image > -1 {
-			var cmd PicCommand
-			s.rcmds.Commands[num].Id = RC_PIC
-			cmd.Pos.X = ent.Pos.X - int32(st.Camera.Left)
-			cmd.Pos.Y = ent.Pos.Y - int32(st.Camera.Top)
-			cmd.Size = ent.Size
-			cmd.SrcSize = Size{16, 32}
-			// cmd.SrcPos
-			s.rcmds.Commands[num].Data = cmd
-		} else {
-			var cmd RectCommand
-			s.rcmds.Commands[num].Id = RC_RECT
-			cmd.Pos.X = ent.Pos.X - int32(st.Camera.Left)
-			cmd.Pos.Y = ent.Pos.Y - int32(st.Camera.Top)
-			cmd.Size = ent.Size
-			cmd.Color = ent.Color
-			s.rcmds.Commands[num].Data = cmd
-		}
+		cmd := &s.rcmds.Commands[num]
+		cmd.Id = RC_PIC
+		cmd.Pos.X = ent.Pos.X - int32(st.Camera.Left)
+		cmd.Pos.Y = ent.Pos.Y - int32(st.Camera.Top)
+		cmd.Size = ent.Size
+		cmd.ImageId = int32(ent.Image)
+		cmd.ImgSize = Size{16, 32}
+		cmd.BackColor = ent.Color
 
 		num++
 	}

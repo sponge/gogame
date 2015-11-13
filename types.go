@@ -2,6 +2,13 @@ package main
 
 import "sync"
 
+func btoi(a bool) int {
+	if a {
+		return 1
+	}
+	return 0
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -83,10 +90,10 @@ type Scene interface {
 }
 
 type UserCommand struct {
-	Up    int32
-	Down  int32
-	Left  int32
-	Right int32
+	Up    int
+	Down  int
+	Left  int
+	Right int
 }
 
 type SceneChannels struct {
@@ -123,28 +130,19 @@ const (
 	RC_TEXT
 )
 
-type RectCommand struct {
-	Pos   Vector
-	Size  Size
-	Color RGBA
-}
-
-type PicCommand struct {
-	ImageId int32
-	Pos     Vector
-	Size    Size
-	SrcPos  Vector
-	SrcSize Size
-}
-
 type RenderCommandList struct {
 	NumCommands int32
 	Commands    [2048]RenderCommand
 }
 
 type RenderCommand struct {
-	Id   RCmd
-	Data interface{}
+	Id        RCmd
+	Pos       Vector
+	Size      Size
+	ImageId   int32
+	ImgPos    Vector
+	ImgSize   Size
+	BackColor RGBA
 }
 
 type Camera struct {
@@ -156,19 +154,19 @@ type Camera struct {
 	Size   Size
 }
 
-func (s *Camera) Set(x int, y int) {
-	s.Left = clamp(0, x, int(s.Bounds.W-s.Size.W))
-	s.Top = clamp(0, y, int(s.Bounds.H-s.Size.H))
+func (s *Camera) Set(pos Vector) {
+	s.Left = clamp(0, int(pos.X), int(s.Bounds.W-s.Size.W))
+	s.Top = clamp(0, int(pos.Y), int(s.Bounds.H-s.Size.H))
 	s.Right = s.Left + int(s.Size.W)
 	s.Bottom = s.Top + int(s.Size.H)
 }
 
 func (s *Camera) SetSize(sz Size) {
 	s.Size = sz
-	s.Set(s.Left, s.Top)
+	s.Set(Vector{int32(s.Left), int32(s.Top)})
 }
 
 func (s *Camera) SetBounds(b Size) {
 	s.Bounds = b
-	s.Set(s.Left, s.Top)
+	s.Set(Vector{int32(s.Left), int32(s.Top)})
 }

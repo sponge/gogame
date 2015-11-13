@@ -19,8 +19,6 @@ var rcmds *RenderCommandList
 var rc *RenderCommand
 var srcRect sdl.Rect
 var dstRect sdl.Rect
-var pic PicCommand
-var rect RectCommand
 
 func main() {
 	fmt.Println("Starting up...")
@@ -53,7 +51,7 @@ func main() {
 	go gameScene.Load(sceneCh)
 
 	textures := make([]*sdl.Texture, 1024, 1024)
-	curTex := 0
+	curTex := 1
 
 	for {
 		// process engine commands from the scene
@@ -85,8 +83,11 @@ func main() {
 				_, _, w, h, _ := texture.Query()
 				sceneCh.Eng <- EngineCommand{Id: engCmd.Id, Success: true, Data: Image{Id: curTex, W: w, H: h}}
 				curTex++
+			default:
+				sceneCh.Eng <- EngineCommand{Success: false}
 			}
 		default:
+
 		}
 
 		// poll for input events and push them to the gamestate queue
@@ -132,18 +133,15 @@ func main() {
 			rc = &rcmds.Commands[i]
 
 			switch rc.Id {
-			// load an image from disk and upload to gpu
 			case RC_PIC:
-				pic = rc.Data.(PicCommand)
-				if pic.SrcSize.W > 0 && pic.SrcSize.H > 0 {
-					srcRect = sdl.Rect{pic.SrcPos.X, pic.SrcPos.Y, pic.SrcSize.W, pic.SrcSize.H}
+				if rc.ImgSize.W > 0 && rc.ImgSize.H > 0 {
+					srcRect = sdl.Rect{rc.ImgPos.X, rc.ImgPos.Y, rc.ImgSize.W, rc.ImgSize.H}
 				}
-				dstRect = sdl.Rect{pic.Pos.X, pic.Pos.Y, pic.Size.W, pic.Size.H}
-				renderer.Copy(textures[pic.ImageId], &srcRect, &dstRect)
+				dstRect = sdl.Rect{rc.Pos.X, rc.Pos.Y, rc.Size.W, rc.Size.H}
+				renderer.Copy(textures[rc.ImageId], &srcRect, &dstRect)
 			case RC_RECT:
-				rect = rc.Data.(RectCommand)
-				renderer.SetDrawColor(rect.Color.R, rect.Color.G, rect.Color.B, rect.Color.A)
-				dstRect = sdl.Rect{rect.Pos.X, rect.Pos.Y, rect.Size.W, rect.Size.H}
+				renderer.SetDrawColor(rc.BackColor.R, rc.BackColor.G, rc.BackColor.B, rc.BackColor.A)
+				dstRect = sdl.Rect{rc.Pos.X, rc.Pos.Y, rc.Size.W, rc.Size.H}
 				renderer.FillRect(&dstRect)
 				renderer.SetDrawColor(0, 0, 0, 255)
 			}
